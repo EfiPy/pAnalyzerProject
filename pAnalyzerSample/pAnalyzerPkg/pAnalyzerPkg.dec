@@ -1,0 +1,20 @@
+## @file
+# Package declarations for the pAnalyzer UEFI test modules.
+#
+# Copyright (C) 2026 MaxWu efipy.core@gmail.com
+# SPDX-License-Identifier: GPL-2.0-only
+##
+
+[Defines]
+  DEC_SPECIFICATION              = 0x00010006
+  PACKAGE_NAME                   = pAnalyzerPkg
+  PACKAGE_GUID                   = 7D4FA95A-FE44-49C3-A4B1-06EE264FF8F6
+  PACKAGE_VERSION                = 0.1
+
+[Includes]
+  Include
+
+[Protocols]
+  gEfiPypAnalyzeTestProtocol  = { 0x82f60aad, 0x45d1, 0x4af7, { 0xba, 0x45, 0xa2, 0x90, 0x84, 0xf6, 0xe4, 0x1b } }
+  gEfiPypAnalyzeTestProtocol2 = { 0x31e464c5, 0x13f9, 0x4681, { 0x9c, 0x9c, 0xfa, 0x56, 0xd3, 0xbc, 0x89, 0x91 } }
+  gEfiPypAnalyzeTestProtocol3 = { 0x3b4cb5f3, 0x8738, 0x43e6, { 0xae, 0x96, 0x22, 0x2d, 0x8e, 0x56, 0x41, 0xc1 } }
