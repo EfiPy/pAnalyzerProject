@@ -54,7 +54,7 @@ def GetDefaultFilter ():
 
     cnt = 0
     for arg in args:
-      s = get_arg_xml (arg)
+      s = get_arg_xml (arg, function_filter2.Native_func._argtypes_[cnt])
       _xml += '<arg%d %s ></arg%d>\n' % (cnt, s, cnt)
       cnt += 1
 
@@ -77,13 +77,13 @@ def GetDefaultFilter ():
       fRest, args = Post_func (dOut, rest, *args)
 
     if rest != None:
-      _xml = '<Output %s>\n' % get_arg_xml (rest)
+      _xml = '<Output %s>\n' % get_arg_xml (rest, func_type._restype_)
     else:
       _xml = '<Output>\n'
 
     cnt = 0
     for arg in args:
-      s = get_arg_xml (arg)
+      s = get_arg_xml (arg, func_type._argtypes_[cnt])
       _xml += '<arg%d %s></arg%d>\n' % (cnt, s, cnt)
       cnt += 1
 

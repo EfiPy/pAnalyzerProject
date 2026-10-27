@@ -18,6 +18,9 @@
 
 import ctypes
 
+# Share the same integer coverage between type names and value serialization.
+_EDK_INTEGER_CODES = 'bBhHiIlLqQnN'
+
 def xml_attr (value):
   """Escape an XML 1.0 attribute, replacing characters XML cannot represent."""
   value = ''.join(ch if (ch in '\t\n\r' or
@@ -30,36 +33,75 @@ def xml_attr (value):
                .replace('\t', '&#9;').replace('\n', '&#10;')
                .replace('\r', '&#13;'))
 
-def get_arg_xml (arg):
+def get_edk_type (data_type):
+  """Render a ctypes declaration as a C type, preserving pointer depth.
+
+  ctypes aliases do not retain typedef names; prefer INTN/UINTN for
+  native-width integers and fixed-width EDK names for other integers.
+  """
+  if data_type is None:
+    return 'VOID'
+  if issubclass(data_type, ctypes._Pointer):
+    target = get_edk_type(data_type._type_)
+    return target + ('*' if target.endswith('*') else ' *')
+  if issubclass(data_type, ctypes.Array):
+    return '%s[%d]' % (get_edk_type(data_type._type_), data_type._length_)
+  if data_type is bool:
+    return 'BOOLEAN'
+  if data_type is int:
+    return 'INTN'
+  if data_type is str:
+    return 'CHAR16 *'
+  if data_type is float:
+    return 'double'
+  if issubclass(data_type, ctypes._SimpleCData):
+    code = data_type._type_
+    names = {'P': 'VOID *', 'z': 'CHAR8 *', 'Z': 'CHAR16 *',
+             'c': 'CHAR8', 'u': 'CHAR16', '?': 'BOOLEAN',
+             'f': 'float', 'd': 'double', 'g': 'long double'}
+    if code in names:
+      return names[code]
+    if code in _EDK_INTEGER_CODES:
+      unsigned = code.isupper()
+      size = ctypes.sizeof(data_type)
+      if size == ctypes.sizeof(ctypes.c_void_p):
+        return 'UINTN' if unsigned else 'INTN'
+      return ('UINT' if unsigned else 'INT') + str(size * 8)
+  return data_type.__name__
+
+
+def get_arg_xml (arg, arg_type=None):
 
   sType  = ""
   sAddr  = ""
   sValue = ""
   sGuid  = ''
   sException = ""
+  declared_type = get_edk_type(arg_type if arg_type is not None else type(arg))
+  type_attribute = 'Type="%s" ' % xml_attr(declared_type)
 
   try:
 
     if arg == None:
-      sType  = 'Type="None" '
+      sType  = type_attribute if arg_type is not None else 'Type="VOID" '
       return sType + sAddr + sValue
 
-    elif type(arg) in (int, float):
-      sType  = 'Type="%s" ' % type(arg).__name__
-      sValue = 'Value="0x%X"' % arg
+    elif type(arg) in (int, bool, float):
+      sType  = type_attribute
+      sValue = 'Value="%s"' % arg if type(arg) is float else 'Value="0x%X"' % arg
       return sType + sAddr + sValue
 
     elif type(arg) in (str, ):
-      sType  = 'Type="%s" ' % type(arg).__name__
+      sType  = type_attribute
       sValue = 'Value="%s"' % xml_attr(arg)
       return sType + sAddr + sValue
 
     elif isinstance (arg, ctypes._SimpleCData):
       # print ("==>", arg.__class__.__name__)
     
-      sType  = 'Type="%s" ' % arg.__class__.__name__
+      sType  = type_attribute
 
-      if arg._type_ in 'bBhHlLdDqQfdq':
+      if arg._type_ in _EDK_INTEGER_CODES + '?':
         sValue = 'Value="0x%X"' % arg.value
 
       elif arg._type_ in 'cu':
@@ -85,13 +127,13 @@ def get_arg_xml (arg):
     # Pure class object
     #
     if issubclass (arg.__class__, ctypes.Structure):
-      sType  = 'Type="%s" ' % arg.__class__.__name__
+      sType  = type_attribute
 
     #
     # pointer structure
     #
     elif issubclass (arg._type_, ctypes.Structure):
-      sType  = 'Type="%s" ' % arg.__class__.__name__
+      sType  = type_attribute
       vAddr  = ctypes.cast (arg, ctypes.c_void_p)
       if vAddr.value == None:
         sAddr = 'Address="0x%X"' % (0x00)
@@ -102,33 +144,33 @@ def get_arg_xml (arg):
     # pointer simple datatype
     #
     elif issubclass (arg._type_, ctypes._SimpleCData):
-      sType  = 'Type="%s" ' % arg.__class__.__name__
+      sType  = type_attribute
       vAddr  = ctypes.cast (arg, ctypes.c_void_p)
       if vAddr.value == None:
         sAddr = 'Address="0x%X"' % (0x00)
       else:
         sAddr = 'Address="0x%X"' % (vAddr.value)
 
-        if arg._type_._type_ in 'bBhHlLdDqQfdq':
+        if arg._type_._type_ in _EDK_INTEGER_CODES + '?':
           sValue = ' Value="0x%X"' % arg[0]
 
         elif arg._type_._type_ in 'cu':
           sValue = ' Value="%s"' % xml_attr('%c' % arg[0])
 
     else:
-      sType  = 'Type="%s" ' % arg.__class__.__name__
+      sType  = type_attribute
 
   except:
     sException  = ' EXCEPT="exception error" '
 
-  if sType == 'Type="LP_GUID" ':
+  if arg.__class__.__name__ == 'LP_GUID':
 
     vAddr = ctypes.cast (arg, ctypes.c_void_p)
 
     if vAddr.value != None:
       sGuid = 'GUID="%s"' % xml_attr(arg[0])
 
-  elif sType == 'Type="LP_c_void_p" ':
+  elif arg.__class__.__name__ == 'LP_c_void_p':
   
     vAddr = ctypes.cast (arg, ctypes.c_void_p)
 

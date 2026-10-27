@@ -247,11 +247,16 @@ The root element is `Panalyzer`. `Section` separates test phases, while `Functio
 | `Active` | interface 欄位目前的值；啟用時通常等於 `filter`，停止後應等於 `Native`。 / Current interface field value; normally equals `filter` while enabled and `Native` after restoration. |
 | `fAddre` | 本次呼叫對應的原始函式位址，保留目前輸出的欄位拼字。 / Original function address for a call; this spelling matches the current output. |
 | `sAddr` | 此次呼叫所屬的 interface instance 位址。 / Interface instance address associated with the call. |
+| `Type` | 以函式宣告與 ctypes 型別轉換為 C／EDK 型別名稱，例如 `GUID *`、`VOID **`、`UINTN`。 / C/EDK type names derived from the function declaration and ctypes types, such as `GUID *`, `VOID **`, and `UINTN`. |
 | `Input`、`Output` | 呼叫前後的參數快照；`Output` 的 `Value` 是函式回傳值。 / Argument snapshots before and after a call; `Output.Value` is the return value. |
 | `Change` | sample 自訂前處理所記錄的參數修改。 / An argument change recorded by a sample pre-callback. |
 | `Data` | 結構中的非函式欄位，例如文字輸出 Protocol 的 `Mode`。 / A non-function structure field, such as the text output protocol's `Mode`. |
 | `Return` | application 的結束狀態。 / Application exit status. |
 | `return Func / Driver` | driver 載入流程狀態及 entry point 執行結果。 / Driver loading-flow status and entry-point result. |
+
+`Type` 會保留指標層數；`c_void_p` 顯示為 `VOID *`，`LP_c_void_p` 顯示為 `VOID **`。同一 ctypes 型別的 typedef 別名無法完全還原，因此 native-width 整數統一以 `INTN`／`UINTN` 呈現，例如 `EFI_STATUS` 可能顯示為 `UINTN`。
+
+`Type` preserves pointer depth: `c_void_p` becomes `VOID *`, while `LP_c_void_p` becomes `VOID **`. Typedef aliases sharing a ctypes type cannot be recovered exactly. Native-width integers are displayed as `INTN` or `UINTN`; for example, `EFI_STATUS` may appear as `UINTN`.
 
 `Output` 中的 `0x0` 通常表示成功，不是「全部位址為零」的舊問題。mode 0 回傳的 `0x50`／`0x19` 表示 80 欄、25 列；OUT 參數在 `Input` 中的舊內容不保證已初始化，應以成功呼叫後的值判讀。
 
