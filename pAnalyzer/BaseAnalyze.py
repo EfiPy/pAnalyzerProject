@@ -293,10 +293,18 @@ class BaseAnalyze:
       self.dOut.append ('<Function name="%s">\n' % xml_attr(iMember))
 
       for _filter in self.Filter:
-        self.dOut.append ('<Address Native="0x%08X" filter="0x%08X" Active="0x%08X"></Address>\n' % \
-          (_filter[iMember][self._Idx_NativeFunc],
-           _filter[iMember][self._Idx_FilterAddr].value,
-           _filter[iMember][self._Idx_funcActive].value))
+        native = _filter[iMember][self._Idx_NativeFunc]
+        filtered = _filter[iMember][self._Idx_FilterAddr].value
+        active = _filter[iMember][self._Idx_funcActive].value
+        if active == native:
+          active_name = 'Native'
+        elif active == filtered:
+          active_name = 'filter'
+        else:
+          # Preserve an unexpected pointer instead of misreporting its state.
+          active_name = '0x%08X' % active
+        self.dOut.append ('<Address Native="0x%08X" filter="0x%08X" Active="%s"></Address>\n' %
+          (native, filtered, active_name))
 
       self.dOut.append ('</Function>\n')
 
