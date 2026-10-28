@@ -9,7 +9,6 @@ ctypes modification, or separately compiled bridge is required.
 """
 
 import ctypes
-import struct
 
 import EfiPy2 as EfiPy
 from pAnalyzer.dOut import xml_attr
@@ -19,6 +18,44 @@ MULTIPLE_PROTOCOL_FUNCTIONS = (
     'InstallMultipleProtocolInterfaces',
     'UninstallMultipleProtocolInterfaces',
 )
+
+
+def _build_entry_program(callback_address):
+    """Build a CorePy-owned EFIAPI entry without an automatic call frame."""
+    import corepy.arch.x86_64.isa as x86
+    import corepy.arch.x86_64.types.registers as reg
+    from corepy.arch.x86_64.lib.memory import MemRef
+    from corepy.arch.x86_64.platform.edk2.spre_edk2_x86_64 import Program
+
+    class EntryProgram(Program):
+        def _synthesize_prologue(self):
+            self._prologue = []
+
+        def _synthesize_epilogue(self):
+            self._epilogue = []
+
+    # Each instruction opts out of CorePy's active stream. A Program's default
+    # prologue would change RSP before we capture the original stack arguments.
+    instructions = (
+        x86.sub(reg.rsp, 0x68, ignore_active=True),
+        x86.mov(MemRef(reg.rsp, 0x20), reg.rcx, ignore_active=True),
+        x86.mov(MemRef(reg.rsp, 0x28), reg.rdx, ignore_active=True),
+        x86.mov(MemRef(reg.rsp, 0x30), reg.r8, ignore_active=True),
+        x86.mov(MemRef(reg.rsp, 0x38), reg.r9, ignore_active=True),
+        x86.lea(reg.rax, MemRef(reg.rsp, 0x68, data_size=None), ignore_active=True),
+        x86.mov(MemRef(reg.rsp, 0x40), reg.rax, ignore_active=True),
+        x86.lea(reg.rcx, MemRef(reg.rsp, 0x20, data_size=None), ignore_active=True),
+        x86.mov(reg.rax, callback_address, ignore_active=True),
+        x86.call(reg.rax, ignore_active=True),
+        x86.add(reg.rsp, 0x68, ignore_active=True),
+        x86.ret(ignore_active=True),
+    )
+    program = EntryProgram()
+    stream = program.get_stream()
+    for instruction in instructions:
+        stream.add(instruction)
+    program.add(stream)
+    return program
 
 
 class _X64Arguments(ctypes.Structure):
@@ -41,9 +78,8 @@ class MultipleProtocolHook:
     """
 
     def __init__(self, name, native_address, function_filter, max_pairs=64):
-        from EfiPy2 import _EfiPy2Pre
         if (ctypes.sizeof(ctypes.c_void_p) != 8 or
-                _EfiPy2Pre.EFIPY_MDE_CPU_TYPE != _EfiPy2Pre.EFIPY_MDE_CPU_X64):
+                EfiPy.EFIPY_MDE_CPU_TYPE != EfiPy.EFIPY_MDE_CPU_X64):
             raise NotImplementedError('Multiple Protocol hooks require X64 EFIAPI')
         if name not in MULTIPLE_PROTOCOL_FUNCTIONS:
             raise ValueError('Unsupported variadic function: ' + name)
@@ -63,28 +99,10 @@ class MultipleProtocolHook:
 
         # X64 Microsoft/UEFI ABI. Reserve shadow space, an argument snapshot,
         # and padding so RSP is 16-byte aligned before calling the callback.
-        code = (
-            b'\x48\x83\xec\x68'      # sub rsp, 0x68
-            b'\x48\x89\x4c\x24\x20'  # mov [rsp+0x20], rcx
-            b'\x48\x89\x54\x24\x28'  # mov [rsp+0x28], rdx
-            b'\x4c\x89\x44\x24\x30'  # mov [rsp+0x30], r8
-            b'\x4c\x89\x4c\x24\x38'  # mov [rsp+0x38], r9
-            b'\x48\x8d\x44\x24\x68'  # lea rax, [rsp+0x68] (entry RSP)
-            b'\x48\x89\x44\x24\x40'  # mov [rsp+0x40], rax
-            b'\x48\x8d\x4c\x24\x20'  # lea rcx, [rsp+0x20] (snapshot)
-            b'\x48\xb8' + struct.pack('<Q', callback_address) +
-            b'\xff\xd0'                # call rax
-            b'\x48\x83\xc4\x68'      # add rsp, 0x68
-            b'\xc3'                     # ret (EFI_STATUS in RAX)
-        )
-        address = EfiPy.EFI_PHYSICAL_ADDRESS(0)
-        status = EfiPy.gBS.AllocatePages(
-            EfiPy.AllocateAnyPages, EfiPy.EfiBootServicesCode, 1,
-            EfiPy.byref(address))
-        if EfiPy.EFI_ERROR(status):
-            raise RuntimeError('AllocatePages for varargs hook failed: 0x%X' % status)
-        self.address = address.value
-        ctypes.memmove(self.address, code, len(code))
+        self._entry_program = _build_entry_program(callback_address)
+        # get_code_bytes() returns a view of Program.render_code. Retain both
+        # the owning Program and the machine-code array while the hook is live.
+        self.address, self._code = self._entry_program.get_code_bytes()
 
     def _capture(self, snapshot):
         handle = snapshot.read(0)
@@ -141,10 +159,9 @@ class MultipleProtocolHook:
 
     def __del__(self):
         # The owning analyzer restores the protocol table before releasing us.
-        # An executing callback must never free its own return instructions.
+        # CorePy owns this buffer; never pass it to gBS.FreePages().
+        # An executing callback must never release its own return instructions.
         if getattr(self, 'address', 0) and not getattr(self, '_busy', True):
-            try:
-                EfiPy.gBS.FreePages(self.address, 1)
-                self.address = 0
-            except Exception:
-                pass
+            self.address = 0
+            self._code = None
+            self._entry_program = None

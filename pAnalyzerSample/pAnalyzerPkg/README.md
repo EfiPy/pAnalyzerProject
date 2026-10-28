@@ -1,6 +1,6 @@
 # pAnalyzerPkg
 
-供 Python `pAnalyzer` 測試使用的 EDK II 套件，包含兩個 UEFI application 與一個 DXE driver。將整個 `pAnalyzerPkg` 複製到 EDK II 根目錄即可建置；Python 測試程式另外保留在原專案的 `pAnalyzerSample` 目錄。
+供 Python `pAnalyzer` 測試使用的 EDK II 套件，包含兩個 UEFI application 與兩個 DXE driver。將整個 `pAnalyzerPkg` 複製到 EDK II 根目錄即可建置；Python 測試程式位於 `pAnalyzerSample` 及 `pAnalyzer` 目錄。
 
 ## 目錄與模組
 
@@ -12,6 +12,7 @@ pAnalyzerPkg/
   pAnalyzeApp/pAnalyzeApp.c, pAnalyzeApp.inf
   pAnalyzeApp2/pAnalyzeApp2.c, pAnalyzeApp2.inf
   pAnalyzeDrv/pAnalyzeDrv.c, pAnalyzeDrv.inf
+  pAnalyzeMultiDrv/pAnalyzeMultiDrv.c, pAnalyzeMultiDrv.inf
 ```
 
 | 模組 | 類型 | 功能 |
@@ -19,10 +20,11 @@ pAnalyzerPkg/
 | `pAnalyzeApp` | UEFI_APPLICATION | 印出測試訊息後結束，可單獨執行。 |
 | `pAnalyzeApp2` | UEFI_APPLICATION | 尋找測試 Protocol，呼叫 `TestFunc()` 並印出計數；需要先載入 driver。 |
 | `pAnalyzeDrv` | DXE_DRIVER | 安裝、替換及移除測試 Protocol，提供 `pAnalyzeApp2` 使用的計數介面。 |
+| `pAnalyzeMultiDrv` | DXE_DRIVER | 獨立執行 1、2、4 組 Multiple Protocol 安裝、查詢與移除測試；可由 Python 分析端載入。 |
 
 `pAnalyzerPkg.dec` 匯出 `Include` 與三個 Protocol GUID；EDK II 依 INF 的 `[Protocols]` 產生 GUID 定義。GUID 的值與 `Include/Protocol/pAnalyze.h` 相同。
 
-`pAnalyzerPkg.dsc` 建置上述三個模組，支援 `IA32`、`X64` 與 `DEBUG`、`RELEASE`、`NOOPT`。建置依賴 EDK II 的 `MdePkg`、`ShellPkg`，不需要 `AppPkg/Python.dec` 或 Python C library。
+`pAnalyzerPkg.dsc` 建置上述四個模組，支援 `IA32`、`X64` 與 `DEBUG`、`RELEASE`、`NOOPT`。建置依賴 EDK II 的 `MdePkg`、`ShellPkg`，不需要 `AppPkg/Python.dec` 或 Python C library。
 
 ## 建置
 
@@ -56,9 +58,14 @@ Build/pAnalyzerPkg/DEBUG_VS2019/X64/
   pAnalyzeApp.efi
   pAnalyzeApp2.efi
   pAnalyzeDrv.efi
+  pAnalyzeMultiDrv.efi
 ```
 
 編譯完成後，將三個 `.efi` 複製到原專案根目錄下的 `Efi/Apps/pAnalyzerSample/`，供 QEMU 中的 UEFI Shell 執行。
+
+另將 `pAnalyzeMultiDrv.efi` 複製到 `Efi/Apps/pAnalyzer/`，搭配該目錄的 `MultiProtocol.py` 使用，詳見 [C 測試端與 Python 分析端](../../pAnalyzer/README.md)。
+
+Copy the additional `pAnalyzeMultiDrv.efi` to `Efi/Apps/pAnalyzer/` for use with `MultiProtocol.py`. See [C Test Driver and Python Observer](../../pAnalyzer/README.md).
 
 ## 在 UEFI Shell 執行
 

@@ -157,6 +157,14 @@ def get_arg_xml (arg, arg_type=None):
         elif arg._type_._type_ in 'cu':
           sValue = ' Value="%s"' % xml_attr('%c' % arg[0])
 
+        elif arg._type_._type_ == 'P':
+          # VOID **: Address is the storage location; Value is *arg.
+          # ctypes returns None for a stored NULL c_void_p.
+          pointed_value = arg[0]
+          if isinstance(pointed_value, ctypes._SimpleCData):
+            pointed_value = pointed_value.value
+          sValue = ' Value="0x%X"' % (pointed_value or 0)
+
     else:
       sType  = type_attribute
 
@@ -169,13 +177,6 @@ def get_arg_xml (arg, arg_type=None):
 
     if vAddr.value != None:
       sGuid = 'GUID="%s"' % xml_attr(arg[0])
-
-  elif arg.__class__.__name__ == 'LP_c_void_p':
-  
-    vAddr = ctypes.cast (arg, ctypes.c_void_p)
-
-    if vAddr.value != None:
-      sValue = ' Value="0x%X"' % vAddr.value
 
   return sType + sAddr + sValue + sGuid + sException
 

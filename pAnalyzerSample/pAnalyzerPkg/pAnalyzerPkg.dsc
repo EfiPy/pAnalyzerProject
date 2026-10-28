@@ -36,3 +36,4 @@
   pAnalyzerPkg/pAnalyzeApp/pAnalyzeApp.inf
   pAnalyzerPkg/pAnalyzeApp2/pAnalyzeApp2.inf
   pAnalyzerPkg/pAnalyzeDrv/pAnalyzeDrv.inf
+  pAnalyzerPkg/pAnalyzeMultiDrv/pAnalyzeMultiDrv.inf
