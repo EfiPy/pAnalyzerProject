@@ -1,0 +1,27 @@
+## @file
+# Copyright (C) 2026 MaxWu efipy.core@gmail.com
+# SPDX-License-Identifier: GPL-2.0-only
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010006
+  BASE_NAME                      = pAnalyzeMultiDrv
+  FILE_GUID                      = B5AC59B8-362C-44A8-BF43-6F5B6D34F490
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 0.1
+  ENTRY_POINT                    = MultiProtocolDriverEntry
+
+[Sources]
+  pAnalyzeMultiDrv.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+
+[LibraryClasses]
+  UefiDriverEntryPoint
+  UefiBootServicesTableLib
+  UefiLib
+  MemoryAllocationLib
+
+[Depex]
+  TRUE
