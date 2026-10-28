@@ -216,23 +216,43 @@ analyzer.start('QueryMode')
 
 ### 5.4 Boot Services 的攔截範圍 / Boot Services Hook Coverage
 
-`pAnalyzer` 建構時會建立內部 `_ProtocolFilter`。目前 `ProtocolFuncList` 預設啟用以下三項；`LoadEfiFiles()` 另外啟用 `HandleProtocol`。`DriverLoad()` 與 `ApplicationExec()` 在執行目標 image 前後切換預設 hooks。
+`pAnalyzer` 建構時會建立內部 `_ProtocolFilter`。目前 X64 的 `ProtocolFuncList` 預設啟用以下五項；其他架構維持前三項。`LoadEfiFiles()` 另外啟用 `HandleProtocol`。`DriverLoad()` 與 `ApplicationExec()` 在執行目標 image 前後切換預設 hooks。
 
-The `pAnalyzer` constructor creates an internal `_ProtocolFilter`. `ProtocolFuncList` enables the following three hooks by default, while `LoadEfiFiles()` additionally enables `HandleProtocol`. `DriverLoad()` and `ApplicationExec()` switch the default hooks around execution of the target image.
+The `pAnalyzer` constructor creates an internal `_ProtocolFilter`. On X64, `ProtocolFuncList` enables the following five hooks by default; other architectures retain the first three. `LoadEfiFiles()` additionally enables `HandleProtocol`. `DriverLoad()` and `ApplicationExec()` switch the default hooks around execution of the target image.
 
 ```python
 ('InstallProtocolInterface', None)
 ('ReinstallProtocolInterface', None)
 ('UninstallProtocolInterface', None)
+('InstallMultipleProtocolInterfaces', None)
+('UninstallMultipleProtocolInterfaces', None)
 ```
 
-`LocateProtocol`、`InstallMultipleProtocolInterfaces`、`UninstallMultipleProtocolInterfaces` 等項目目前被註解。取消某個項目的註解，只表示開始攔截該項 API；不能據此把其他未記錄的操作視為沒執行。可變參數 API 的攔截還需要確認 ctypes 宣告能正確處理該呼叫，不能只靠取消註解就視為驗證完成。
+`LocateProtocol` 等項目目前仍被註解；未記錄的操作不代表沒有執行。兩個 Multiple Protocol API 使用 `VarArgs.py` 的專用處理，而不是原本只宣告一個參數的 ctypes callback。
 
-Entries such as `LocateProtocol`, `InstallMultipleProtocolInterfaces`, and `UninstallMultipleProtocolInterfaces` are currently commented out. Enabling one adds coverage for that API; missing records for other APIs do not prove they were not called. Variadic APIs also require a suitable ctypes declaration and validation, beyond simply enabling their list entries.
+Entries such as `LocateProtocol` remain commented out; a missing record does not prove an operation was not called. The two Multiple Protocol APIs use the dedicated implementation in `VarArgs.py`, rather than the original one-argument ctypes callback.
 
-目前沒有重入保護。自訂 callback 若再次呼叫正在攔截的同一個 Boot Service，可能形成遞迴。現有紀錄先累積在記憶體，避免每個 hook 都立即執行檔案 I/O；但累積紀錄也會增加記憶體使用量。
+兩個 Multiple Protocol hooks 有重入保護，再次進入同一 hook 時直接轉送原始函式，不重複紀錄或執行前後處理；其他一般 hooks 尚無此保護。現有紀錄先累積在記憶體，避免每個 hook 都立即執行檔案 I/O；但累積紀錄也會增加記憶體使用量。
 
-There is currently no reentrancy guard. A custom callback that calls the same hooked Boot Service can recurse. Logs are buffered in memory instead of performing file I/O on every hook, at the cost of increasing memory use as the trace grows.
+The two Multiple Protocol hooks guard reentry: a nested call to the same hook forwards directly to the original function without logging or invoking pre/post callbacks again. Ordinary hooks do not yet have this guard. Logs are buffered in memory instead of performing file I/O on every hook, at the cost of increasing memory use as the trace grows.
+
+### 5.5 以 Python 分析不定長參數 / Python Analysis of Variadic Arguments
+
+`VarArgs.py` 由 Python 產生一小段 X64 機器碼入口，不修改 ctypes、libffi 或 UEFI Python，也不需要另外編譯 C bridge。入口保存 RCX、RDX、R8、R9 與原始 RSP，再用固定參數的 callback 交給 Python。這不是單靠 Python `*args`：機器碼負責保留原始呼叫的 ABI 狀態。
+
+`VarArgs.py` generates a small X64 machine-code entry from Python without modifying ctypes, libffi, or UEFI Python, and without a separately compiled C bridge. The entry captures RCX, RDX, R8, R9, and the original RSP, then passes that snapshot to Python through a fixed-argument callback. Python `*args` alone is insufficient; the entry preserves the original ABI state.
+
+Python 依序讀取 Handle、GUID／Interface 配對，直到 GUID 位置的 NULL。Interface 為 NULL 不代表結束。讀取完成後依實際參數數量建立 ctypes 函式型別，完整呼叫原始 Multiple API；不會拆成數個單筆 API，因此保留原始 firmware 的回復處理。XML 的 `Input length` 包含 Handle、所有配對及結尾 NULL，兩組配對的長度為 6。
+
+Python reads the handle and GUID/interface pairs until a NULL appears in a GUID slot; a NULL interface does not terminate the list. It then constructs a ctypes prototype for the actual argument count and invokes the original Multiple API in full, preserving firmware rollback behavior rather than decomposing the call into single-protocol operations. XML `Input length` includes the handle, all pairs, and the NULL terminator: two pairs produce a length of 6.
+
+此版本僅支援 X64 Microsoft／UEFI ABI，使用 `AllocatePages(EfiBootServicesCode)` 配置入口頁面。每次呼叫預設最多讀取 64 組配對；超過上限回傳 `EFI_INVALID_PARAMETER` 並記錄錯誤，不會截斷參數後繼續呼叫原始 API。`MultipleProtocolHook.max_pairs` 可調整讀取上限。一般 `Pre_func`／`Post_func` 可沿用，但參數個數仍須符合該次呼叫建立的型別。
+
+This implementation supports only the X64 Microsoft/UEFI ABI and allocates its entry page with `AllocatePages(EfiBootServicesCode)`. The default parsing limit is 64 pairs per call. Calls exceeding it return `EFI_INVALID_PARAMETER` with an error record; truncated arguments are never forwarded. `MultipleProtocolHook.max_pairs` controls the limit. Existing pre/post callbacks can be used, but argument counts must match the prototype constructed for that call.
+
+目前已用 Windows X64 上真正的 C `va_list` 函式驗證 0、1、2、4、12、64 組配對、NULL Interface、原始回傳碼、重入與停止還原；仍需在 QEMU／UEFI 中重新執行 `PaTest3.py`，驗證目標 interpreter 與 firmware 的實際組合。成功後應增加兩種 Multiple Protocol 的呼叫紀錄。
+
+Tests against real C `va_list` functions on Windows X64 cover 0, 1, 2, 4, 12, and 64 pairs, NULL interfaces, native status codes, reentry, and pointer restoration. Rerun `PaTest3.py` in QEMU/UEFI to validate the actual interpreter/firmware combination. Successful execution should add records for both Multiple Protocol APIs.
 
 ## 6. XML 判讀與離線分析 / XML Interpretation and Offline Analysis
 

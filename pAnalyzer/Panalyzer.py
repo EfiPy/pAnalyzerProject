@@ -31,6 +31,7 @@ from pAnalyzer.BaseAnalyze import BaseAnalyze as _bAnalyze
 from EfiPy2.MdePkg.Protocol import ShellParameters as sPara
 from pAnalyzer.BaseAnalyze import dOutClass
 from pAnalyzer.dOut import xml_attr
+from EfiPy2 import _EfiPy2Pre
 
 class pAnalyzer (_bAnalyze):
 
@@ -52,9 +53,15 @@ class pAnalyzer (_bAnalyze):
                              # ("CloseProtocol",                      None),
                              # ("ProtocolsPerHandle",                 None),
                              # ("LocateProtocol",                     None),
-                             # ("InstallMultipleProtocolInterfaces",  None),
-                             # ("UninstallMultipleProtocolInterfaces",None),
+                             ("InstallMultipleProtocolInterfaces",  None),
+                             ("UninstallMultipleProtocolInterfaces",None),
                             )
+
+    # Keep the ordinary hooks available on IA32 and other architectures.
+    # The generated variadic entry stub currently implements X64 EFIAPI only.
+    if _EfiPy2Pre.EFIPY_MDE_CPU_TYPE != _EfiPy2Pre.EFIPY_MDE_CPU_X64:
+      self.ProtocolFuncList = tuple(item for item in self.ProtocolFuncList if item[0] not in (
+        'InstallMultipleProtocolInterfaces', 'UninstallMultipleProtocolInterfaces'))
 
     self._ProtocolFilter = _bAnalyze(dOut)
     self._ProtocolFilter.Build_Capability (EfiPy.EFI_BOOT_SERVICES)

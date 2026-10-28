@@ -174,6 +174,18 @@ class BaseAnalyze:
       iFilter.Information = (iMember, self._Structure, _filter[iMember][self._Idx_NativeFunc], p_base.value)
       iFilter.dOut        = self.dOut
 
+      # These two EFIAPI entries have a NULL-terminated variadic pointer list.
+      # Create their special entry stubs lazily in start(), not a one-argument
+      # ctypes callback which would discard all GUID/interface pairs.
+      if (self._Structure is EfiPy.EFI_BOOT_SERVICES and iMember in (
+          'InstallMultipleProtocolInterfaces', 'UninstallMultipleProtocolInterfaces')):
+        iFilter.VarArgs = True
+        iFilter.Callback = None
+        _filter[iMember][self._Idx_FilterFunc] = iFilter
+        _filter[iMember][self._Idx_FilterAddr] = EfiPy.UINTN(0)
+        _filter[iMember][self._Idx_Enable] = False
+        continue
+
       FilterFunc  = I_FILTER(iFilter)
       # Keep the C callback alive while its address is installed in firmware.
       iFilter.Callback = FilterFunc
@@ -238,7 +250,13 @@ class BaseAnalyze:
         continue
 
       for _filter in self.Filter:
-      
+        iFilter = _filter[_FuncName][self._Idx_FilterFunc]
+        if getattr(iFilter, 'VarArgs', False) and iFilter.Callback is None:
+          from pAnalyzer.VarArgs import MultipleProtocolHook
+          iFilter.Callback = MultipleProtocolHook(
+            _FuncName, _filter[_FuncName][self._Idx_NativeFunc], iFilter)
+          _filter[_FuncName][self._Idx_FilterAddr] = EfiPy.PVOID(iFilter.Callback.address)
+
         _filter[_FuncName][self._Idx_funcActive].value = \
           _filter[_FuncName][self._Idx_FilterAddr].value
 
